@@ -1,0 +1,386 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+from datetime import datetime
+from sklearn.linear_model import LinearRegression
+import numpy as np
+
+# =====================================================
+# CONFIGURACION
+# =====================================================
+
+st.set_page_config(
+    page_title="Production Dashboard",
+    layout="wide"
+)
+
+# =====================================================
+# ESTILO
+# =====================================================
+
+st.markdown("""
+<style>
+
+.main {
+    background-color:#0E1117;
+}
+
+[data-testid="stMetricValue"]{
+    font-size:38px;
+    font-weight:bold;
+}
+
+[data-testid="stMetricLabel"]{
+    font-size:18px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =====================================================
+# ENCABEZADO
+# =====================================================
+
+col_logo, col_texto = st.columns([1,5])
+
+with col_logo:
+    st.image("logo_esia.png", width=180)
+
+with col_texto:
+
+    st.markdown("""
+    <h2>
+    Escuela Superior de Ingeniería y Arquitectura ESIA Unidad Ticomán
+    </h2>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    Instituto Politécnico Nacional
+    """)
+
+    st.write(
+        "**Materia:** Análisis de yacimientos areno-arcillosos"
+    )
+
+    st.write(
+        "**Profesor:** Omar Alvarado Bailey"
+    )
+
+    st.write(
+        "**Alumnos:** Lara Araujo David Misael | Vargas López Efrain Ezequiel"
+    )
+
+    st.write(
+        f"**Fecha:** {datetime.now().strftime('%d/%m/%Y')}"
+    )
+
+st.markdown("---")
+
+st.markdown(
+    "<h1 style='text-align:center;'>Production Dashboard - Volve Field</h1>",
+    unsafe_allow_html=True
+)
+
+# =====================================================
+# CARGA DE DATOS
+# =====================================================
+
+df = pd.read_excel(
+    "Volve production data.xlsx",
+    sheet_name="Monthly Production Data"
+)
+
+df = df.iloc[1:].copy()
+
+# =====================================================
+# LIMPIEZA
+# =====================================================
+
+numericas = [
+    "Year",
+    "Month",
+    "On Stream",
+    "Oil",
+    "Gas",
+    "Water"
+]
+
+for col in numericas:
+    df[col] = pd.to_numeric(
+        df[col],
+        errors="coerce"
+    )
+
+df = df.dropna(subset=["Year", "Month"])
+
+df["Fecha"] = pd.to_datetime(
+    df["Year"].astype(int).astype(str)
+    + "-"
+    + df["Month"].astype(int).astype(str)
+    + "-01"
+)
+
+# =====================================================
+# FILTROS
+# =====================================================
+
+st.sidebar.header("Filtros")
+
+años = sorted(df["Year"].dropna().unique())
+meses = sorted(df["Month"].dropna().unique())
+pozos = sorted(df["Wellbore name"].dropna().unique())
+
+año = st.sidebar.selectbox(
+    "Año",
+    ["Todos"] + list(años)
+)
+
+mes = st.sidebar.selectbox(
+    "Mes",
+    ["Todos"] + list(meses)
+)
+
+pozo = st.sidebar.selectbox(
+    "Pozo",
+    ["Todos"] + list(pozos)
+)
+
+df_filtrado = df.copy()
+
+if año != "Todos":
+    df_filtrado = df_filtrado[
+        df_filtrado["Year"] == año
+    ]
+
+if mes != "Todos":
+    df_filtrado = df_filtrado[
+        df_filtrado["Month"] == mes
+    ]
+
+if pozo != "Todos":
+    df_filtrado = df_filtrado[
+        df_filtrado["Wellbore name"] == pozo
+    ]
+
+# =====================================================
+# KPIs
+# =====================================================
+
+onstream = df_filtrado["On Stream"].sum()
+oil = df_filtrado["Oil"].sum()
+gas = df_filtrado["Gas"].sum()
+water = df_filtrado["Water"].sum()
+
+c1, c2, c3, c4 = st.columns(4)
+
+c1.metric(
+    "On Stream (hrs)",
+    f"{onstream:,.0f}"
+)
+
+c2.metric(
+    "Oil Production",
+    f"{oil:,.0f}"
+)
+
+c3.metric(
+    "Gas Production",
+    f"{gas:,.0f}"
+)
+
+c4.metric(
+    "Water Production",
+    f"{water:,.0f}"
+)
+
+st.markdown("---")
+
+# =====================================================
+# COLORES POR POZO
+# =====================================================
+
+color_map = {
+    "15/9-F-1 C":"#8e44ad",
+    "15/9-F-11":"#1abc9c",
+    "15/9-F-12":"#4a76b8",
+    "15/9-F-14":"#f1c40f",
+    "15/9-F-15 D":"#e84393",
+    "15/9-F-4":"#7cb342",
+    "15/9-F-5":"#f39c12"
+}
+
+# =====================================================
+# GRAFICAS
+# =====================================================
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    fig1 = px.line(
+        df_filtrado,
+        x="Fecha",
+        y=["Oil","Gas","Water"],
+        title="Evolución de Producción"
+    )
+
+    st.plotly_chart(
+        fig1,
+        width="stretch"
+    )
+
+with col2:
+
+    prod_pozo = (
+        df_filtrado
+        .groupby("Wellbore name")["Oil"]
+        .sum()
+        .reset_index()
+    )
+
+    fig2 = px.bar(
+        prod_pozo,
+        x="Oil",
+        y="Wellbore name",
+        orientation="h",
+        color="Wellbore name",
+        color_discrete_map=color_map,
+        title="Producción por Pozo"
+    )
+
+    st.plotly_chart(
+        fig2,
+        width="stretch"
+    )
+
+# =====================================================
+# SEGUNDA FILA
+# =====================================================
+
+col3, col4 = st.columns(2)
+
+with col3:
+
+    fig3 = px.pie(
+        prod_pozo,
+        names="Wellbore name",
+        values="Oil",
+        hole=0.5,
+        color="Wellbore name",
+        color_discrete_map=color_map,
+        title="Participación por Pozo"
+    )
+
+    st.plotly_chart(
+        fig3,
+        width="stretch"
+    )
+
+with col4:
+
+    fig4 = px.line(
+        df_filtrado,
+        x="Fecha",
+        y="Water",
+        color="Wellbore name",
+        color_discrete_map=color_map,
+        title="Producción de Agua"
+    )
+
+    st.plotly_chart(
+        fig4,
+        width="stretch"
+    )
+
+# =====================================================
+# TABLA
+# =====================================================
+
+st.markdown("## Resumen por Pozo")
+
+resumen = (
+    df_filtrado
+    .groupby("Wellbore name")
+    .agg({
+        "Oil":"sum",
+        "Gas":"sum",
+        "Water":"sum",
+        "On Stream":"sum"
+    })
+    .reset_index()
+)
+
+st.dataframe(
+    resumen,
+    width="stretch"
+)
+
+# =====================================================
+# PREDICCION
+# =====================================================
+
+st.markdown("---")
+st.markdown("## Predicción de Producción de Petróleo")
+
+pred = (
+    df_filtrado
+    .groupby("Fecha")["Oil"]
+    .sum()
+    .reset_index()
+)
+
+if len(pred) > 5:
+
+    pred["t"] = np.arange(len(pred))
+
+    X = pred[["t"]]
+    y = pred["Oil"]
+
+    modelo = LinearRegression()
+    modelo.fit(X, y)
+
+    futuro = np.arange(
+        len(pred),
+        len(pred)+12
+    )
+
+    futuro_df = pd.DataFrame({
+        "t": futuro
+    })
+
+    futuro_df["Oil Predicho"] = modelo.predict(
+        futuro_df[["t"]]
+    )
+
+    fechas_futuras = pd.date_range(
+        pred["Fecha"].max(),
+        periods=13,
+        freq="MS"
+    )[1:]
+
+    futuro_df["Fecha"] = fechas_futuras
+
+    fig5 = px.line(
+        pred,
+        x="Fecha",
+        y="Oil",
+        title="Predicción de Producción de Petróleo"
+    )
+
+    fig5.add_scatter(
+        x=futuro_df["Fecha"],
+        y=futuro_df["Oil Predicho"],
+        mode="lines",
+        name="Predicción"
+    )
+
+    st.plotly_chart(
+        fig5,
+        width="stretch"
+    )
+
+st.markdown("---")
+
+st.caption(
+    "Escuela Superior de Ingeniería y Arquitectura ESIA Unidad Ticomán | Instituto Politécnico Nacional"
+)
